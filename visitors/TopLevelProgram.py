@@ -8,7 +8,7 @@ class TopLevelProgram(ast.NodeVisitor):
 
     def __init__(self, entry_point) -> None:
         super().__init__()
-        self.__instructions = list()
+        self.__instructions: list[LabeledInstruction] = list()
         self.__record_instruction('NOP1', label=entry_point)
         self.__should_save = True
         self.__current_variable = None

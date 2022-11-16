@@ -6,7 +6,7 @@ class GlobalVariableExtraction(ast.NodeVisitor):
 
     def __init__(self) -> None:
         super().__init__()
-        self.results = set()
+        self.results: set[int] = set()
 
     def visit_Assign(self, node):
         if len(node.targets) != 1:
