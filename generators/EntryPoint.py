@@ -6,5 +6,8 @@ class EntryPoint():
     def generate(self):
         print('; Top Level instructions')
         for label, instr in self.__instructions:
-            s = f'\t\t{instr}' if label == None else f'{str(label+":"):<9}\t{instr}'
+            if label is None:
+                s = f'\t\t{instr}'
+            else:
+                s = f'{str(label+":"):<9}\t{instr}'
             print(s)
