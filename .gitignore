@@ -4,3 +4,7 @@
 __pycache__/
 .coverage
 .DS_Store
+report.*
+!report.tex
+!report.pdf
+_minted-report
