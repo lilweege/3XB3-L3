@@ -1,9 +1,9 @@
 import argparse
 import ast
-from visitors.GlobalVariables import GlobalVariableExtraction
-from visitors.TopLevelProgram import TopLevelProgram
-from generators.StaticMemoryAllocation import StaticMemoryAllocation
-from generators.EntryPoint import EntryPoint
+from rbs.visitors.GlobalVariables import GlobalVariableExtraction
+from rbs.visitors.TopLevelProgram import TopLevelProgram
+from rbs.generators.StaticMemoryAllocation import StaticMemoryAllocation
+from rbs.generators.EntryPoint import EntryPoint
 
 
 def process_cli():

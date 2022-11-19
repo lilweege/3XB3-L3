@@ -1,5 +1,5 @@
 import ast
-from .Errors import compile_error_and_crash, \
+from ..common.Errors import compile_error, \
     ensure_args, ensure_condition, ensure_assign
 
 LabeledInstruction = tuple[str | None, str]
@@ -52,7 +52,7 @@ class TopLevelProgram(ast.NodeVisitor):
         elif isinstance(node.op, ast.Sub):
             self.__access_memory(node.right, 'SUBA')
         else:
-            compile_error_and_crash(node, f'Unsupported binary operator: {node.op}')
+            compile_error(node, f'Unsupported binary operator: {node.op}')
 
     def visit_Call(self, node: ast.Call):
         assert isinstance(node.func, ast.Name)
@@ -70,10 +70,10 @@ class TopLevelProgram(ast.NodeVisitor):
                 ensure_args(node, 1)
                 to_print = node.args[0]
                 if not isinstance(to_print, ast.Name):
-                    compile_error_and_crash(node, "Printing unnamed expressions is unsupported")
+                    compile_error(node, "Printing unnamed expressions is unsupported")
                 self.__record_instruction(f'DECO {to_print.id},d')
             case _:
-                compile_error_and_crash(node, f'Unsupported function call: {node.func.id}')
+                compile_error(node, f'Unsupported function call: {node.func.id}')
 
     ####
     # Handling While loops (only variable OP variable)
@@ -98,7 +98,7 @@ class TopLevelProgram(ast.NodeVisitor):
         # Branching is condition is not true (thus, inverted)
         cmp_typ = type(cmp.ops[0])
         if cmp_typ not in comparisons:
-            compile_error_and_crash(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
+            compile_error(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
         self.__record_instruction(f'{comparisons[cmp_typ]} end_l_{loop_id}')
         # Visiting the body of the loop
         for contents in node.body:
@@ -128,7 +128,7 @@ class TopLevelProgram(ast.NodeVisitor):
         elif isinstance(node, ast.Name):
             self.__record_instruction(f'{instruction} {node.id},d', label)
         else:
-            compile_error_and_crash(node, f"Cannot access memory of {node}")
+            compile_error(node, f"Cannot access memory of {node}")
 
     def __identify(self):
         result = self.__elem_id

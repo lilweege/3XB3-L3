@@ -1,5 +1,5 @@
 import ast
-from .Errors import ensure_assign
+from ..common.Errors import ensure_assign
 
 
 class GlobalVariableExtraction(ast.NodeVisitor):
