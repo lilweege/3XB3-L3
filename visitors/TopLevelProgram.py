@@ -1,25 +1,8 @@
 import ast
-from .Errors import compile_error_and_crash
+from .Errors import compile_error_and_crash, \
+    ensure_args, ensure_condition, ensure_assign
 
 LabeledInstruction = tuple[str | None, str]
-
-
-def ensure_args(node: ast.Call, num_args: int):
-    if len(node.args) != num_args:
-        compile_error_and_crash(node, f"Expected {num_args} arguments, got {len(node.args)}")
-    if any(isinstance(x, ast.Starred) for x in node.args):
-        compile_error_and_crash(node, "Star arguments are not supported")
-    if len(node.keywords) != 0:
-        compile_error_and_crash(node, "Keyword arguments are not supported")
-
-
-def ensure_condition(node: ast.expr):
-    if not isinstance(node, ast.Compare):
-        compile_error_and_crash(node, "Conditional must be comparison")
-    if len(node.ops) != 1:
-        compile_error_and_crash(node, "Multiple comparison are not supported")
-    if isinstance(node.ops[0], (ast.Is, ast.IsNot, ast.In, ast.NotIn)):
-        compile_error_and_crash(node, f"Unsuppored comparison type '{type(node.ops[0]).__name__}'")
 
 
 class TopLevelProgram(ast.NodeVisitor):
@@ -44,10 +27,9 @@ class TopLevelProgram(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign):
         # remembering the name of the target
-        assert len(node.targets) > 0
-        var_name = node.targets[0]
-        if not isinstance(var_name, ast.Name):
-            raise ValueError(f'Unsupported target: {var_name}')
+        ensure_assign(node)
+        assert isinstance(node.targets[0], ast.Name)
+        var_name: ast.Name = node.targets[0]
         self.__current_variable = var_name.id
         # visiting the left part, now knowing where to store the result
         self.visit(node.value)
@@ -70,7 +52,7 @@ class TopLevelProgram(ast.NodeVisitor):
         elif isinstance(node.op, ast.Sub):
             self.__access_memory(node.right, 'SUBA')
         else:
-            raise ValueError(f'Unsupported binary operator: {node.op}')
+            compile_error_and_crash(node, f'Unsupported binary operator: {node.op}')
 
     def visit_Call(self, node: ast.Call):
         assert isinstance(node.func, ast.Name)
@@ -88,10 +70,10 @@ class TopLevelProgram(ast.NodeVisitor):
                 ensure_args(node, 1)
                 to_print = node.args[0]
                 if not isinstance(to_print, ast.Name):
-                    raise ValueError("Printing unnamed expressions is unsupported")
+                    compile_error_and_crash(node, "Printing unnamed expressions is unsupported")
                 self.__record_instruction(f'DECO {to_print.id},d')
             case _:
-                raise ValueError(f'Unsupported function call: {node.func.id}')
+                compile_error_and_crash(node, f'Unsupported function call: {node.func.id}')
 
     ####
     # Handling While loops (only variable OP variable)
@@ -99,8 +81,10 @@ class TopLevelProgram(ast.NodeVisitor):
 
     def visit_While(self, node: ast.While):
         ensure_condition(node.test)
+        assert isinstance(node.test, ast.Compare)
+        cmp: ast.Compare = node.test
         loop_id = self.__identify()
-        inverted = {
+        comparisons = {
             ast.Lt:    'BRGE',  # '<'  in the code means we branch if '>='
             ast.LtE:   'BRGT',  # '<=' in the code means we branch if '>'
             ast.Gt:    'BRLE',  # '>'  in the code means we branch if '<='
@@ -108,12 +92,14 @@ class TopLevelProgram(ast.NodeVisitor):
             ast.Eq:    'BRNE',
             ast.NotEq: 'BREQ',
         }
-        # left part can only be a variable
-        self.__access_memory(node.test.left, 'LDWA', label=f'test_{loop_id}')
-        # right part can only be a variable
-        self.__access_memory(node.test.comparators[0], 'CPWA')
+        lhs, rhs = cmp.left, cmp.comparators[0]
+        self.__access_memory(lhs, 'LDWA', label=f'test_{loop_id}')
+        self.__access_memory(rhs, 'CPWA')
         # Branching is condition is not true (thus, inverted)
-        self.__record_instruction(f'{inverted[type(node.test.ops[0])]} end_l_{loop_id}')
+        cmp_typ = type(cmp.ops[0])
+        if cmp_typ not in comparisons:
+            compile_error_and_crash(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
+        self.__record_instruction(f'{comparisons[cmp_typ]} end_l_{loop_id}')
         # Visiting the body of the loop
         for contents in node.body:
             self.visit(contents)
@@ -136,12 +122,13 @@ class TopLevelProgram(ast.NodeVisitor):
     def __record_instruction(self, instruction: str, label: str | None = None):
         self.__instructions.append((label, instruction))
 
-    def __access_memory(self, node: ast.expr, instruction, label=None):
+    def __access_memory(self, node: ast.expr, instruction: str, label=None):
         if isinstance(node, ast.Constant):
             self.__record_instruction(f'{instruction} {node.value},i', label)
-        else:
-            assert isinstance(node, ast.Name)
+        elif isinstance(node, ast.Name):
             self.__record_instruction(f'{instruction} {node.id},d', label)
+        else:
+            compile_error_and_crash(node, f"Cannot access memory of {node}")
 
     def __identify(self):
         result = self.__elem_id

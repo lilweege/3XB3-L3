@@ -1,7 +1,9 @@
+from typing import Iterable
+
 
 class StaticMemoryAllocation():
 
-    def __init__(self, global_vars: dict) -> None:
+    def __init__(self, global_vars: Iterable[str]) -> None:
         self.__global_vars = global_vars
 
     def generate(self):
