@@ -1,8 +1,6 @@
 import ast
-from ..common.Errors import compile_error, \
-    ensure_args, ensure_condition, ensure_assign
-
-LabeledInstruction = tuple[str | None, str]
+from ..common.Errors import compile_error, ensure_args, ensure_condition, ensure_assign
+from ..common.Types import LabeledInstruction
 
 
 class TopLevelProgram(ast.NodeVisitor):
@@ -21,6 +19,44 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__instructions.append((None, '.END'))
         return self.__instructions
 
+    def try_propagate_constant(self, node: ast.AST) -> tuple[bool, int]:
+        '''
+        Returns:
+            bool: Is it possible to propagate the expression
+            int: If possible, the value of the propogated constant
+        '''
+
+        if isinstance(node, ast.BinOp):
+            if not isinstance(node.op, (ast.Add, ast.Sub)):
+                compile_error(node, f'Unsupported binary operator: {type(node.op).__name__}')
+
+            ok1, lhs = self.try_propagate_constant(node.left)
+            ok2, rhs = self.try_propagate_constant(node.right)
+            if not (ok1 and ok2):
+                return False, 0
+
+            if isinstance(node.op, ast.Add):
+                return True, lhs + rhs
+            else:
+                return True, lhs - rhs
+
+        elif isinstance(node, ast.Constant):
+            if not isinstance(node.value, int):
+                compile_error(node, f"Unsupported type {type(node.value).__name__}")
+            return True, node.value
+
+        elif isinstance(node, ast.Name):
+            if node.id not in self.__propagated_constants:
+                return False, 0
+            return True, self.__propagated_constants[node.id]
+
+        elif isinstance(node, ast.Call):
+            # Can't evaluate a function call
+            return False, 0
+
+        else:
+            compile_error(node, f"Unsupported type {type(node).__name__} in expression")
+
     ####
     # Handling Assignments (variable = ...)
     ####
@@ -31,6 +67,14 @@ class TopLevelProgram(ast.NodeVisitor):
         assert isinstance(node.targets[0], ast.Name)
         var_name: ast.Name = node.targets[0]
         self.__current_variable = var_name.id
+
+        ok, const_val = self.try_propagate_constant(node.value)
+        if ok:
+            self.__propagated_constants[self.__current_variable] = const_val
+        elif self.__current_variable in self.__propagated_constants:
+            # Value was constant but is changing to a non-constant value
+            self.__propagated_constants.pop(self.__current_variable)
+
         # visiting the left part, now knowing where to store the result
         self.visit(node.value)
         if self.__should_save:
@@ -52,7 +96,7 @@ class TopLevelProgram(ast.NodeVisitor):
         elif isinstance(node.op, ast.Sub):
             self.__access_memory(node.right, 'SUBA')
         else:
-            compile_error(node, f'Unsupported binary operator: {node.op}')
+            compile_error(node, f'Unsupported binary operator: {type(node.op).__name__}')
 
     def visit_Call(self, node: ast.Call):
         assert isinstance(node.func, ast.Name)
@@ -63,6 +107,7 @@ class TopLevelProgram(ast.NodeVisitor):
                 self.visit(node.args[0])
             case 'input':
                 # We are only supporting integers for now
+                ensure_args(node, 0)
                 self.__record_instruction(f'DECI {self.__current_variable},d')
                 self.__should_save = False  # DECI already save the value in memory
             case 'print':
