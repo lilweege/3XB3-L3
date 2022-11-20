@@ -1,9 +1,6 @@
 import argparse
 import ast
-from rbs.visitors.GlobalVariables import GlobalVariableExtraction
-from rbs.visitors.TopLevelProgram import TopLevelProgram
-from rbs.generators.StaticMemoryAllocation import StaticMemoryAllocation
-from rbs.generators.EntryPoint import EntryPoint
+from rbs.Compiler import compile
 
 
 def process_cli():
@@ -15,20 +12,6 @@ def process_cli():
     return args['f'], args['ast_only']
 
 
-def process(input_file, root_node):
-    print(f'; Translating {input_file}')
-    extractor = GlobalVariableExtraction()
-    extractor.visit(root_node)
-    memory_alloc = StaticMemoryAllocation(extractor.results)
-    print('; Branching to top level (tl) instructions')
-    print('\t\tBR tl')
-    memory_alloc.generate()
-    top_level = TopLevelProgram('tl')
-    top_level.visit(root_node)
-    ep = EntryPoint(top_level.finalize())
-    ep.generate()
-
-
 def main():
     input_file, print_ast = process_cli()
     with open(input_file) as f:
@@ -37,7 +20,7 @@ def main():
     if print_ast:
         print(ast.dump(node, indent=2))
     else:
-        process(input_file, node)
+        compile(node, input_file)
 
 
 if __name__ == '__main__':

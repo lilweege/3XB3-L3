@@ -4,7 +4,7 @@ from ..common.Errors import compile_error
 
 class ConstantPropagator:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.__propagated_constants: dict[str, int] = {}
         self.__reassigned_idents: set[str] = set()
         self.__seen_idents: set[str] = set()

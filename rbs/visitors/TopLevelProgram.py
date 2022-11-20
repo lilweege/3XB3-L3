@@ -2,6 +2,7 @@ import ast
 from ..common.Errors import compile_error, ensure_args, ensure_condition, ensure_assign
 from ..common.Types import LabeledInstruction
 from ..common.Utils import is_constant_ident, next_name_generator, reversed_next_name_generator
+from ..common.Output import CompilerOutput
 from .ConstantPropagator import ConstantPropagator
 from .SymbolGenerator import SymbolGenerator
 
@@ -9,8 +10,9 @@ from .SymbolGenerator import SymbolGenerator
 class TopLevelProgram(ast.NodeVisitor):
     """We supports assignments and input/print calls"""
 
-    def __init__(self, entry_point) -> None:
+    def __init__(self, output: CompilerOutput, entry_point: str) -> None:
         super().__init__()
+        self.__output = output
         self.__instructions: list[LabeledInstruction] = list()
         self.__record_instruction('NOP1', label=entry_point)
         self.__should_save = True
@@ -33,17 +35,15 @@ class TopLevelProgram(ast.NodeVisitor):
         # remembering the name of the target
         ensure_assign(node)
         assert isinstance(node.targets[0], ast.Name)
-        var_name: ast.Name = node.targets[0]
         ident = node.targets[0].id
-        self.__current_variable = self.__ident_label_generator.lookup_or_create(ident)
-        # self.__current_variable = ident
+        self.__current_variable = self.__get_ident_label(ident)
 
         if is_constant_ident(ident):
             # This variable will be defined with .EQUATE, don't load and store
             return
 
-        first_seen_now = var_name.id not in self.__constant_propagator.seen_idents
-        is_constexpr, _, const_val = self.__constant_propagator.add_assign(var_name.id, node.value)
+        first_seen_now = ident not in self.__constant_propagator.seen_idents
+        is_constexpr, _, _ = self.__constant_propagator.add_assign(ident, node.value)
 
         if first_seen_now and is_constexpr and self.__loop_depth == 0:
             # Don't load and store if the value is statically initialized
@@ -61,7 +61,7 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__record_instruction(f'LDWA {node.value},i')
 
     def visit_Name(self, node: ast.Name):
-        ident_label = self.__ident_label_generator.lookup_or_create(node.id)
+        ident_label = self.__get_ident_label(node.id)
         self.__record_instruction(f'LDWA {ident_label},d')
 
     def visit_BinOp(self, node: ast.BinOp):
@@ -91,7 +91,7 @@ class TopLevelProgram(ast.NodeVisitor):
                 to_print = node.args[0]
                 if not isinstance(to_print, ast.Name):
                     compile_error(node, "Printing unnamed expressions is unsupported")
-                ident_label = self.__ident_label_generator.lookup_or_create(to_print.id)
+                ident_label = self.__get_ident_label(to_print.id)
                 self.__record_instruction(f'DECO {ident_label},d')
             case _:
                 compile_error(node, f'Unsupported function call: {node.func.id}')
@@ -104,8 +104,13 @@ class TopLevelProgram(ast.NodeVisitor):
         ensure_condition(node.test)
         assert isinstance(node.test, ast.Compare)
         cmp: ast.Compare = node.test
-        test_label = self.__identify()
-        end_label = self.__identify()
+        if self.__output.unsafe_identifiers:
+            test_label = f'test_{self.__elem_id}'
+            end_label = f'end_l_{self.__elem_id}'
+            self.__elem_id += 1
+        else:
+            test_label = self.__identify()
+            end_label = self.__identify()
         comparisons = {
             ast.Lt:    'BRGE',  # '<'  in the code means we branch if '>='
             ast.LtE:   'BRGT',  # '<=' in the code means we branch if '>'
@@ -151,10 +156,16 @@ class TopLevelProgram(ast.NodeVisitor):
             self.__record_instruction(f'{instruction} {node.value},i', label)
         elif isinstance(node, ast.Name):
             addr_mode = 'i' if is_constant_ident(node.id) else 'd'
-            ident_label = self.__ident_label_generator.lookup_or_create(node.id)
+            ident_label = self.__get_ident_label(node.id)
             self.__record_instruction(f'{instruction} {ident_label},{addr_mode}', label)
         else:
             compile_error(node, f"Cannot access memory of {node}")
+
+    def __get_ident_label(self, ident: str):
+        if self.__output.unsafe_identifiers:
+            return ident
+        else:
+            return self.__ident_label_generator.lookup_or_create(ident)
 
     def __identify(self):
         result = self.__loop_label_generator.lookup_or_create(str(self.__elem_id))
