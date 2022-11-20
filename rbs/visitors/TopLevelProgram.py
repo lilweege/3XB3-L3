@@ -1,16 +1,16 @@
 import ast
 from ..common.Errors import compile_error, ensure_args, ensure_condition, ensure_assign
 from ..common.Types import LabeledInstruction
-from ..common.Utils import is_constant_ident, next_name_generator, reversed_next_name_generator
+from ..common.Utils import is_constant_ident, reversed_next_name_generator
 from ..common.Output import CompilerOutput
 from .ConstantPropagator import ConstantPropagator
-from .SymbolGenerator import SymbolGenerator
+from ..common.SymbolTable import SymbolTable
 
 
 class TopLevelProgram(ast.NodeVisitor):
     """We supports assignments and input/print calls"""
 
-    def __init__(self, output: CompilerOutput, entry_point: str) -> None:
+    def __init__(self, output: CompilerOutput, symbol_table: SymbolTable, entry_point: str) -> None:
         super().__init__()
         self.__output = output
         self.__instructions: list[LabeledInstruction] = list()
@@ -20,8 +20,8 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__constant_propagator = ConstantPropagator()
         self.__loop_depth = 0
         self.__elem_id = 0
-        self.__loop_label_generator = SymbolGenerator(reversed_next_name_generator(8))
-        self.__ident_label_generator = SymbolGenerator(next_name_generator(8))
+        self.__ident_label_generator = symbol_table
+        self.__loop_label_generator = SymbolTable(reversed_next_name_generator(8))
 
     def finalize(self):
         self.__instructions.append((None, '.END'))
@@ -42,11 +42,12 @@ class TopLevelProgram(ast.NodeVisitor):
             # This variable will be defined with .EQUATE, don't load and store
             return
 
+        # Try to propagate constants, it may or may not be possible
         first_seen_now = ident not in self.__constant_propagator.seen_idents
         is_constexpr, _, _ = self.__constant_propagator.add_assign(ident, node.value)
 
         if first_seen_now and is_constexpr and self.__loop_depth == 0:
-            # Don't load and store if the value is statically initialized
+            # Don't load and store if the value can be statically initialized
             return
 
         # visiting the left part, now knowing where to store the result
@@ -165,7 +166,7 @@ class TopLevelProgram(ast.NodeVisitor):
         if self.__output.unsafe_identifiers:
             return ident
         else:
-            return self.__ident_label_generator.lookup_or_create(ident)
+            return self.__ident_label_generator[ident]
 
     def __identify(self):
         result = self.__loop_label_generator.lookup_or_create(str(self.__elem_id))
