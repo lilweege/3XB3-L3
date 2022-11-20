@@ -25,5 +25,5 @@ def compile(root_node, input_file, output_file=stdout):
     print('; Branching to top level (tl) instructions', file=output_file)
     print('\t\tBR tl', file=output_file)
     memory_alloc.generate()
-    ep = EntryPoint(top_level.finalize())
+    ep = EntryPoint(output, top_level.finalize())
     ep.generate()

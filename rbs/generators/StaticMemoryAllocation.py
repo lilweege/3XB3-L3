@@ -15,7 +15,7 @@ class StaticMemoryAllocation():
         self.__global_vars = global_vars
 
     def generate(self):
-        print('; Allocating Global (static) memory')
+        print('; Allocating Global (static) memory', file=self.__output.output_file)
         for s, kind, x in self.__global_vars:
             ident = s
             if not self.__output.unsafe_identifiers:
