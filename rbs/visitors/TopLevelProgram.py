@@ -1,6 +1,8 @@
 import ast
 from ..common.Errors import compile_error, ensure_args, ensure_condition, ensure_assign
 from ..common.Types import LabeledInstruction
+from ..common.Utils import is_constant_ident
+from .ConstantPropagator import ConstantPropagator
 
 
 class TopLevelProgram(ast.NodeVisitor):
@@ -13,49 +15,12 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__should_save = True
         self.__current_variable: str | None = None
         self.__elem_id = 0
-        self.__propagated_constants: dict[str, int] = {}
+        self.__constant_propagator = ConstantPropagator()
+        self.__loop_depth = 0
 
     def finalize(self):
         self.__instructions.append((None, '.END'))
         return self.__instructions
-
-    def try_propagate_constant(self, node: ast.AST) -> tuple[bool, int]:
-        '''
-        Returns:
-            bool: Is it possible to propagate the expression
-            int: If possible, the value of the propogated constant
-        '''
-
-        if isinstance(node, ast.BinOp):
-            if not isinstance(node.op, (ast.Add, ast.Sub)):
-                compile_error(node, f'Unsupported binary operator: {type(node.op).__name__}')
-
-            ok1, lhs = self.try_propagate_constant(node.left)
-            ok2, rhs = self.try_propagate_constant(node.right)
-            if not (ok1 and ok2):
-                return False, 0
-
-            if isinstance(node.op, ast.Add):
-                return True, lhs + rhs
-            else:
-                return True, lhs - rhs
-
-        elif isinstance(node, ast.Constant):
-            if not isinstance(node.value, int):
-                compile_error(node, f"Unsupported type {type(node.value).__name__}")
-            return True, node.value
-
-        elif isinstance(node, ast.Name):
-            if node.id not in self.__propagated_constants:
-                return False, 0
-            return True, self.__propagated_constants[node.id]
-
-        elif isinstance(node, ast.Call):
-            # Can't evaluate a function call
-            return False, 0
-
-        else:
-            compile_error(node, f"Unsupported type {type(node).__name__} in expression")
 
     ####
     # Handling Assignments (variable = ...)
@@ -68,12 +33,16 @@ class TopLevelProgram(ast.NodeVisitor):
         var_name: ast.Name = node.targets[0]
         self.__current_variable = var_name.id
 
-        ok, const_val = self.try_propagate_constant(node.value)
-        if ok:
-            self.__propagated_constants[self.__current_variable] = const_val
-        elif self.__current_variable in self.__propagated_constants:
-            # Value was constant but is changing to a non-constant value
-            self.__propagated_constants.pop(self.__current_variable)
+        if is_constant_ident(self.__current_variable):
+            # This variable will be defined with .EQUATE, don't load and store
+            return
+
+        first_seen_now = var_name.id not in self.__constant_propagator.seen_idents
+        is_constexpr, _, const_val = self.__constant_propagator.add_assign(var_name.id, node.value)
+
+        if first_seen_now and is_constexpr and self.__loop_depth == 0:
+            # Don't load and store if the value is statically initialized
+            return
 
         # visiting the left part, now knowing where to store the result
         self.visit(node.value)
@@ -146,8 +115,10 @@ class TopLevelProgram(ast.NodeVisitor):
             compile_error(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
         self.__record_instruction(f'{comparisons[cmp_typ]} end_l_{loop_id}')
         # Visiting the body of the loop
+        self.__loop_depth += 1
         for contents in node.body:
             self.visit(contents)
+        self.__loop_depth -= 1
         self.__record_instruction(f'BR test_{loop_id}')
         # Sentinel marker for the end of the loop
         self.__record_instruction('NOP1', label=f'end_l_{loop_id}')
@@ -171,7 +142,8 @@ class TopLevelProgram(ast.NodeVisitor):
         if isinstance(node, ast.Constant):
             self.__record_instruction(f'{instruction} {node.value},i', label)
         elif isinstance(node, ast.Name):
-            self.__record_instruction(f'{instruction} {node.id},d', label)
+            addr_mode = 'i' if is_constant_ident(node.id) else 'd'
+            self.__record_instruction(f'{instruction} {node.id},{addr_mode}', label)
         else:
             compile_error(node, f"Cannot access memory of {node}")
 
