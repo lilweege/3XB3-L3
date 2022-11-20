@@ -30,7 +30,7 @@ Avenue Group: 42}
 
 % TODO: figure out how to use custom font in code block
 \section*{F$_1$: Global Variables and First Visits}
-\subsection*{Manual translation}
+\subsection*{Manual Translation}
 The following is a translation of \code{simple.py} into Pep/9.
 \begin{minted}[bgcolor=LightGray, linenos, xleftmargin=\parindent, breaklines]{Nasm}
       BR      main
@@ -64,7 +64,7 @@ main: DECI value, d
 \subsection*{Global vs Local variables}
 In python, global variables are any variables that are declared at the top level of the program (not within any function). These variables are typically referred to as "static" variables, and they are stored within the data or bss sections of the binary. Local variables in python exist at the function scope level. These variables are stored on the call stack, and they exist until the function containing them returns and the scope is destroyed.
 
-\subsection*{NOP1 instructions}
+\subsection*{NOP1 Instructions}
 The translator emits \code{NOP1} instructions after the entry point label for seemingly no reason. However, this instruction is necessary to avoid syntax errors due to how Pep/9 works. Every label must have an instruction on the same line, otherwise the assembler gives the error \code{ERROR: Must have mnemonic or dot command after symbol definition.}. Since we can't guarantee that an instruction will follow the label (the souce file could be empty), we emit a dummy instruction regardless.
 
 \subsection*{Explanation of Visitors and Generators}
@@ -81,5 +81,8 @@ The first improvement of initializing global static variables with their initial
 The next improvement changes constant variables to be textually substituted (basically macros), rather than store them in memory. It makes sense to not allocate space for these variables only if we disallow modifying them. Similar to the previous improvement, this also relies on constant propagation. If we ever visit an assignment node in which the identifier node on the left of the equal sign starts with an underscore and is capitalized, then we can simplify the generated code by hardcoding the evaluated expression as the equated value. In the assembly we emit a .EQUATE instead of a .WORD or .BLOCK directive wherever this applies. Additionally, the addressing mode must become 'i' rather than 'd', since the label now refers to an immediate value and not an address.\\
 
 The last improvement fixes the susceptibility of labels to clobbering each-other if any share prefixes that are at least 8 characters long. Instead of naively naming each label based on their corresponding variable or other naming scheme, we can map every variable name to a unique alphanumeric permutation (using a symbol table). In this way, we have at least $26^{8}$ possible label names. Whenever code that uses a variable is generated, the symbol table maps from the variable's identifier to the label used in the generated code.
+
+\subsection*{Integer Overflow}
+When attempting to store large integers in most programming languages, we must be mindful of the width of the integer type used. In Pep/9 For example, the word size is only 2 bytes (16 bits), which means that we can only store integers between -32768 ($-2^{15}$) and 32767 ($2^{15}-1$) inclusively (we represent signed integers as two's complement). Integer overflow (or underflow) occurs when a computation would result in a number too large or small to fit within the integer width. For instance our Pep/9 program cannot compute factorials larger than 7 (5040), since the result of 8 factorial (40320) would overflow a 16-bit integer. In other "real" programming languages, integer overflow is handled in various different ways. The most natural way is to take the result modulo $2^{n}$ (equivalently, the result bitwise ANDed with $2^{n}-1$) where $n$ is the number of bits in the integer. This is because at a hardware level integers are (usually) represented as two's complement, and overflowing the width simply means discarding the overflowed bits. Other languages either promote the data type to one with a larger width, or throw exceptions.
 
 \end{document}
