@@ -1,8 +1,9 @@
 import ast
 from ..common.Errors import compile_error, ensure_args, ensure_condition, ensure_assign
 from ..common.Types import LabeledInstruction
-from ..common.Utils import is_constant_ident
+from ..common.Utils import is_constant_ident, next_name_generator, reversed_next_name_generator
 from .ConstantPropagator import ConstantPropagator
+from .SymbolGenerator import SymbolGenerator
 
 
 class TopLevelProgram(ast.NodeVisitor):
@@ -14,9 +15,11 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__record_instruction('NOP1', label=entry_point)
         self.__should_save = True
         self.__current_variable: str | None = None
-        self.__elem_id = 0
         self.__constant_propagator = ConstantPropagator()
         self.__loop_depth = 0
+        self.__elem_id = 0
+        self.__loop_label_generator = SymbolGenerator(reversed_next_name_generator(8))
+        self.__ident_label_generator = SymbolGenerator(next_name_generator(8))
 
     def finalize(self):
         self.__instructions.append((None, '.END'))
@@ -31,9 +34,11 @@ class TopLevelProgram(ast.NodeVisitor):
         ensure_assign(node)
         assert isinstance(node.targets[0], ast.Name)
         var_name: ast.Name = node.targets[0]
-        self.__current_variable = var_name.id
+        ident = node.targets[0].id
+        self.__current_variable = self.__ident_label_generator.lookup_or_create(ident)
+        # self.__current_variable = ident
 
-        if is_constant_ident(self.__current_variable):
+        if is_constant_ident(ident):
             # This variable will be defined with .EQUATE, don't load and store
             return
 
@@ -56,7 +61,8 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__record_instruction(f'LDWA {node.value},i')
 
     def visit_Name(self, node: ast.Name):
-        self.__record_instruction(f'LDWA {node.id},d')
+        ident_label = self.__ident_label_generator.lookup_or_create(node.id)
+        self.__record_instruction(f'LDWA {ident_label},d')
 
     def visit_BinOp(self, node: ast.BinOp):
         self.__access_memory(node.left, 'LDWA')
@@ -85,7 +91,8 @@ class TopLevelProgram(ast.NodeVisitor):
                 to_print = node.args[0]
                 if not isinstance(to_print, ast.Name):
                     compile_error(node, "Printing unnamed expressions is unsupported")
-                self.__record_instruction(f'DECO {to_print.id},d')
+                ident_label = self.__ident_label_generator.lookup_or_create(to_print.id)
+                self.__record_instruction(f'DECO {ident_label},d')
             case _:
                 compile_error(node, f'Unsupported function call: {node.func.id}')
 
@@ -97,7 +104,8 @@ class TopLevelProgram(ast.NodeVisitor):
         ensure_condition(node.test)
         assert isinstance(node.test, ast.Compare)
         cmp: ast.Compare = node.test
-        loop_id = self.__identify()
+        test_label = self.__identify()
+        end_label = self.__identify()
         comparisons = {
             ast.Lt:    'BRGE',  # '<'  in the code means we branch if '>='
             ast.LtE:   'BRGT',  # '<=' in the code means we branch if '>'
@@ -107,21 +115,21 @@ class TopLevelProgram(ast.NodeVisitor):
             ast.NotEq: 'BREQ',
         }
         lhs, rhs = cmp.left, cmp.comparators[0]
-        self.__access_memory(lhs, 'LDWA', label=f'test_{loop_id}')
+        self.__access_memory(lhs, 'LDWA', label=test_label)
         self.__access_memory(rhs, 'CPWA')
         # Branching is condition is not true (thus, inverted)
         cmp_typ = type(cmp.ops[0])
         if cmp_typ not in comparisons:
             compile_error(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
-        self.__record_instruction(f'{comparisons[cmp_typ]} end_l_{loop_id}')
+        self.__record_instruction(f'{comparisons[cmp_typ]} {end_label}')
         # Visiting the body of the loop
         self.__loop_depth += 1
         for contents in node.body:
             self.visit(contents)
         self.__loop_depth -= 1
-        self.__record_instruction(f'BR test_{loop_id}')
+        self.__record_instruction(f'BR {test_label}')
         # Sentinel marker for the end of the loop
-        self.__record_instruction('NOP1', label=f'end_l_{loop_id}')
+        self.__record_instruction('NOP1', label=end_label)
 
     ####
     # Not handling function calls
@@ -143,11 +151,12 @@ class TopLevelProgram(ast.NodeVisitor):
             self.__record_instruction(f'{instruction} {node.value},i', label)
         elif isinstance(node, ast.Name):
             addr_mode = 'i' if is_constant_ident(node.id) else 'd'
-            self.__record_instruction(f'{instruction} {node.id},{addr_mode}', label)
+            ident_label = self.__ident_label_generator.lookup_or_create(node.id)
+            self.__record_instruction(f'{instruction} {ident_label},{addr_mode}', label)
         else:
             compile_error(node, f"Cannot access memory of {node}")
 
     def __identify(self):
-        result = self.__elem_id
+        result = self.__loop_label_generator.lookup_or_create(str(self.__elem_id))
         self.__elem_id += 1
         return result
