@@ -85,4 +85,45 @@ The last improvement fixes the susceptibility of labels to clobbering each-other
 \subsection*{Integer Overflow}
 When attempting to store large integers in most programming languages, we must be mindful of the width of the integer type used. In Pep/9 For example, the word size is only 2 bytes (16 bits), which means that we can only store integers between -32768 ($-2^{15}$) and 32767 ($2^{15}-1$) inclusively (we represent signed integers as two's complement). Integer overflow (or underflow) occurs when a computation would result in a number too large or small to fit within the integer width. For instance our Pep/9 program cannot compute factorials larger than 7 (5040), since the result of 8 factorial (40320) would overflow a 16-bit integer. In other "real" programming languages, integer overflow is handled in various different ways. The most natural way is to take the result modulo $2^{n}$ (equivalently, the result bitwise ANDed with $2^{n}-1$) where $n$ is the number of bits in the integer. This is because at a hardware level integers are (usually) represented as two's complement, and overflowing the width simply means discarding the overflowed bits. Other languages either promote the data type to one with a larger width, or throw exceptions.
 
+\section*{F$_3$: Conditionals}
+\subsection*{Manual Translation}
+The following is a manual translation of \code{gcd.py}. Due to the nature of manual translation, some optimizations have been implemented such as removing redundant labels and jumps, not loading values if they are already in the register, and reusing the result of a single comparison instruction for multiple conditions.
+\begin{minted}[bgcolor=LightGray, linenos, xleftmargin=\parindent, breaklines]{Nasm}
+      BR      main
+a:    .BLOCK 2
+b:    .BLOCK 2
+main: DECI a,d
+      DECI b,d
+while:LDWA a,d
+      CPWA b,d
+      BREQ done
+      BRLE else
+      SUBA b,d
+      STWA a,d
+      BR while
+else: LDWA b,d
+      SUBA a,d
+      STWA b,d
+      BR while
+done: DECO a,d 
+      .END
+\end{minted}
+
+\subsection*{Automation of Conditional Translation}
+Implementing conditionals is very similar to implementing loops, which conveniently is already done for us. To implement all of these conditionals, all we need to do is implement a visitor for \code{if} statements (\code{else} statements don't have their own visitor since they are contained in the \code{if}). In terms of code generation, each if/else block adds two labels and two branches so that the control flow branches into two paths, then joins back into one. The translation will always look like the following:
+
+\begin{minted}[bgcolor=LightGray, linenos, xleftmargin=\parindent, breaklines]{Nasm}
+      ; Evaluate condition (usually CPWA) and branch if false
+      ; if a == b:
+      LDWA a,d
+      CPWA b,d
+      BRNE else
+      ; true branch
+      BR fi
+else: NOP1
+      ; false branch
+fi:   NOP1  ; get here by jumping (if) or falling through (else)
+\end{minted}
+Of course, the \code{NOP1} instructions are included for simplicity, but they could be omitted if optimized. Luckily, an \code{elif} statements is equivalent to an \code{else} statement with the \code{if} statement inside of it, so we can reuse the logic above for this. For this reason, the python \code{ast} module doesn't even recognize \code{elif}s, which means we don't even have to consider this case.
+
 \end{document}

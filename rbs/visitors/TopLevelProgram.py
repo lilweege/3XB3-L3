@@ -18,10 +18,10 @@ class TopLevelProgram(ast.NodeVisitor):
         self.__should_save = True
         self.__current_variable: str | None = None
         self.__constant_propagator = ConstantPropagator()
-        self.__loop_depth = 0
-        self.__elem_id = 0
-        self.__ident_label_generator = symbol_table
-        self.__loop_label_generator = SymbolTable(reversed_next_name_generator(8))
+        self.__scope_depth = 0
+        self.__label_id = 0
+        self.__ident_labels = symbol_table
+        self.__loop_label_generator = reversed_next_name_generator(8)
 
     def finalize(self):
         self.__instructions.append((None, '.END'))
@@ -46,7 +46,7 @@ class TopLevelProgram(ast.NodeVisitor):
         first_seen_now = ident not in self.__constant_propagator.seen_idents
         is_constexpr, _, _ = self.__constant_propagator.add_assign(ident, node.value)
 
-        if first_seen_now and is_constexpr and self.__loop_depth == 0:
+        if first_seen_now and is_constexpr and self.__scope_depth == 0:
             # Don't load and store if the value can be statically initialized
             return
 
@@ -97,45 +97,89 @@ class TopLevelProgram(ast.NodeVisitor):
             case _:
                 compile_error(node, f'Unsupported function call: {node.func.id}')
 
+    # Map from node types to their corresponding "inverted" mnemonic
+    __inv_comparisons = {
+        ast.Lt:    'BRGE',  # '<'  in the code means we branch if '>='
+        ast.LtE:   'BRGT',  # '<=' in the code means we branch if '>'
+        ast.Gt:    'BRLE',  # '>'  in the code means we branch if '<='
+        ast.GtE:   'BRLT',  # '>=' in the code means we branch if '<'
+        ast.Eq:    'BRNE',
+        ast.NotEq: 'BREQ',
+    }
+
+    def __branch_compare(self, node: ast.If | ast.While, entry_label: str | None, exit_label: str):
+        '''Common logic shared between if and while statements'''
+        ensure_condition(node.test)
+        assert isinstance(node.test, ast.Compare)
+        cmp: ast.Compare = node.test
+
+        lhs, rhs = cmp.left, cmp.comparators[0]
+        self.__access_memory(lhs, 'LDWA', label=entry_label)
+        self.__access_memory(rhs, 'CPWA')
+
+        cmp_typ = type(cmp.ops[0])
+        if cmp_typ not in self.__inv_comparisons:
+            compile_error(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
+
+        self.__record_instruction(f'{self.__inv_comparisons[cmp_typ]} {exit_label}')
+
+    ####
+    # Handling Conditionals
+    ####
+
+    def visit_If(self, node: ast.If):
+        self.__scope_depth += 1
+        if self.__output.unsafe_identifiers:
+            else_label = f'else_{self.__label_id}'
+            fi_label = f'fi_{self.__label_id}'
+            self.__label_id += 1
+        else:
+            else_label = next(self.__loop_label_generator)
+            fi_label = next(self.__loop_label_generator)
+
+        has_else = len(node.orelse) > 0
+        self.__branch_compare(node, None, else_label if has_else else fi_label)
+
+        # Body of true (if) branch
+        for contents in node.body:
+            self.visit(contents)
+
+        if has_else:
+            self.__record_instruction(f'BR {fi_label}')
+            self.__record_instruction('NOP1', label=else_label)
+
+            # Body of false (else) branch
+            for contents in node.orelse:
+                self.visit(contents)
+
+        # Sentinel marker for the end of the loop
+        self.__record_instruction('NOP1', label=fi_label)
+        self.__scope_depth -= 1
+
     ####
     # Handling While loops (only variable OP variable)
     ####
 
     def visit_While(self, node: ast.While):
-        ensure_condition(node.test)
-        assert isinstance(node.test, ast.Compare)
-        cmp: ast.Compare = node.test
+        self.__scope_depth += 1
         if self.__output.unsafe_identifiers:
-            test_label = f'test_{self.__elem_id}'
-            end_label = f'end_l_{self.__elem_id}'
-            self.__elem_id += 1
+            test_label = f'test_{self.__label_id}'
+            end_label = f'end_l_{self.__label_id}'
+            self.__label_id += 1
         else:
-            test_label = self.__identify()
-            end_label = self.__identify()
-        comparisons = {
-            ast.Lt:    'BRGE',  # '<'  in the code means we branch if '>='
-            ast.LtE:   'BRGT',  # '<=' in the code means we branch if '>'
-            ast.Gt:    'BRLE',  # '>'  in the code means we branch if '<='
-            ast.GtE:   'BRLT',  # '>=' in the code means we branch if '<'
-            ast.Eq:    'BRNE',
-            ast.NotEq: 'BREQ',
-        }
-        lhs, rhs = cmp.left, cmp.comparators[0]
-        self.__access_memory(lhs, 'LDWA', label=test_label)
-        self.__access_memory(rhs, 'CPWA')
-        # Branching is condition is not true (thus, inverted)
-        cmp_typ = type(cmp.ops[0])
-        if cmp_typ not in comparisons:
-            compile_error(node, f"Unsuppored comparison '{cmp_typ.__name__}'")
-        self.__record_instruction(f'{comparisons[cmp_typ]} {end_label}')
-        # Visiting the body of the loop
-        self.__loop_depth += 1
+            test_label = next(self.__loop_label_generator)
+            end_label = next(self.__loop_label_generator)
+
+        self.__branch_compare(node, test_label, end_label)
+
+        # Body of the loop
         for contents in node.body:
             self.visit(contents)
-        self.__loop_depth -= 1
         self.__record_instruction(f'BR {test_label}')
+
         # Sentinel marker for the end of the loop
         self.__record_instruction('NOP1', label=end_label)
+        self.__scope_depth -= 1
 
     ####
     # Not handling function calls
@@ -166,9 +210,4 @@ class TopLevelProgram(ast.NodeVisitor):
         if self.__output.unsafe_identifiers:
             return ident
         else:
-            return self.__ident_label_generator[ident]
-
-    def __identify(self):
-        result = self.__loop_label_generator.lookup_or_create(str(self.__elem_id))
-        self.__elem_id += 1
-        return result
+            return self.__ident_labels[ident]
