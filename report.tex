@@ -124,6 +124,96 @@ else: NOP1
       ; false branch
 fi:   NOP1  ; get here by jumping (if) or falling through (else)
 \end{minted}
-Of course, the \code{NOP1} instructions are included for simplicity, but they could be omitted if optimized. Luckily, an \code{elif} statements is equivalent to an \code{else} statement with the \code{if} statement inside of it, so we can reuse the logic above for this. For this reason, the python \code{ast} module doesn't even recognize \code{elif}s, which means we don't even have to consider this case.
+Of course, the \code{NOP1} instructions are included for simplicity, but they could be omitted if optimized. Luckily, an \code{elif} statements is equivalent to an \code{else} statement with the \code{if} statement inside of it. For this reason, the python \code{ast} module doesn't even recognize \code{elif}s, which means we don't even have to consider this case.
+
+\section*{F$_4$: Function Calls}
+\subsection*{Ranking of Translation Complexity}
+The following is our ranking of the programs in \code{\_samples/4\_function\_calls} in terms of difficulty from easiest to hardest.
+\\\\
+\code{call\_void.py}\\
+\code{call\_param.py}\\
+\code{call\_return.py}\\
+\code{fibonacci.py}\\
+\code{factorial.py}\\
+\code{fib\_rec.py}\\
+\code{factorial\_rec.py}\\
+
+Arguably the easiest program to translate is \code{call\_void.py}, since it takes no parameters and has no return value. The only difficulty comes from the change in control flow associated with jumping and returning, as well as the local variable stored on the stack. Both \code{call\_param.py} and \code{call\_return.py} introduce parameters which are pushed onto the stack, and then returning a value by pushing to the stack or placing it in the register before returning. For these reasons they are slightly harder to implement. By this reasoning we think that \code{fibonacci.py} would have a similar difficulty to \code{call\_return.py}. \code{factorial.py} has two functions, one of which has two parameters, further increasing the difficulty. Lastly, \code{fib\_rec.py} and \code{factorial\_rec.py} are the hardest because they are incorporate all of the concepts of the previous samples, but they introduce recursion. To ensure correctness in a recursive program the stack frames must not clobber each other, and overflowing the program stack becomes a consideration.
+
+\subsection*{Manual Translation}
+The following is a translation of \code{call\_param.py} into Pep/9.
+\begin{minted}[bgcolor=LightGray, linenos, xleftmargin=\parindent, breaklines]{Nasm}
+         BR program
+_UNIV:   .EQUATE 42
+x:       .BLOCK 2
+value:   .EQUATE 2  ; parameter my_func #2d
+result:  .EQUATE 0  ; local var my_func #2d
+my_func: SUBSP 4,i  ; push #value, #result
+         LDWA value,s
+         ADDA _UNIV,i
+         STWA result,s
+         DECO result,s
+         ADDSP 4,i  ; pop #value, #result
+         RET
+program: DECI x,d
+         LDWA x,d
+         STWA -4,s
+         CALL my_func
+         .END
+\end{minted}
+The following is a translation of \code{call\_return.py} into Pep/9.
+\begin{minted}[bgcolor=LightGray, linenos, xleftmargin=\parindent, breaklines]{Nasm}
+BR program
+_UNIV:   .EQUATE 42
+x:       .BLOCK 2
+result:  .BLOCK 2
+value:   .EQUATE 2 ; parameter my_func #2d
+lresult: .EQUATE 0 ; local var my_func #2d
+my_func: SUBSP 4,i ; push #value, #lresult
+         LDWA value,s
+         ADDA _UNIV,i
+         STWA lresult,s
+         ADDSP 4,i ; pop #value, #lresult
+         RET
+program: DECI x,d
+         LDWA x,d
+         STWA -4,s
+         CALL my_func
+         STWA result,d 
+         DECO result,d 
+         .END 
+\end{minted}
+The following is a translation of \code{call\_void.py} into Pep/9.
+\begin{minted}[bgcolor=LightGray, linenos, xleftmargin=\parindent, breaklines]{Nasm}
+         BR program
+_UNIV:   .EQUATE 42
+value:   .EQUATE 2  ; local var my_func #2d
+result:  .EQUATE 0  ; local var my_func #2d
+my_func: SUBSP 4,i  ; push #value, #result
+         DECI value,s
+         LDWA value,s
+         ADDA _UNIV,i
+         STWA result,s
+         DECO result,s
+         ADDSP 4,i  ; pop #value, #result
+         RET
+program: CALL my_func
+         .END
+\end{minted}
+
+\subsection*{Automation of Functions}
+Generating the code for procedures and procedure calls requires steps taken on behalf of the callee and caller. Both need to ensure that they work together to pass values correctly and maintain the stack. \\
+
+On the caller side, parameters should be placed on the stack (avoiding the space that the return address will be pushed) before calling. Importantly, we rely on the fact that RBS semantics only support call-by-value parameters. This means that every integer passed to a function is copied, rather than passing a pointer to mutable memory. If we were to support call-by-reference instead, the address of the memory would have be pushed onto the stack instead of the value itself. Furthermore, since we don't have to worry about pointers, accessing the value of the parameters becomes much simpler, since we never have to dereference any pointer (or do indirect memory accesses). \\
+
+Also, the caller should use the return value should be used before it is overwritten after the function returns. To keep things simple, we opted to utilize the accumulator register for the return value of the function. It's fair to assume that RBS doesn't need to support multiple return values, since we only support integers (no tuples), and of course multiple assignment is out of the question for RBS.  \\
+
+On the callee side, the stack frame should be created (stack pointer moves) on entry and removed (stack pointer is reset) on return, so that local variables are allocated correctly. If another function were to be called and not enough space was made for the frame, then the local variables would be clobbered. Then, all memory accesses to local variables should be done in a "stack-relative" addressing mode, since the memory is on the stack rather than global.
+
+\subsection*{Stack Overflow}
+If the stack ever becomes so large that it would exceed some maximum size, it could clobber memory used by other parts of the program. The Pep/9 virtual machine seems to be able recognize this and detect these cases of recursion, which allows it to terminate the running program. For instance, when you call a function in java and there is no more stack memory available in the JVM, then a StackOverflow exception is thrown. In C, the stack will normally collide with other memory, and if memory sanitizers are not enabled then this will usually result in crashing due to segmentation faults (trying to access virtual memory protected by the operating system). \\
+
+A common way that programs can encounter stack overflows is when executing a recursive function with an incorrect (or no) base case. If the recursive depth of the function call became very large, it would blow up the stack, and we would encounter a case of stack overflow. Another way that the stack could overflow is if a stack frame has very large local variables. For example, if a function call needed to use an array of one billion elements, that array would take up too much space in the call stack, and the program would crash.
+
 
 \end{document}
