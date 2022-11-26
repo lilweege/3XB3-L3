@@ -11,6 +11,6 @@ class InitKind(Enum):
     WORD = 3
 
 
-# The string contains the identifier, and the bool specifies const
+# The string contains the identifier, and InitKind specifies how the global variable is allocated
 # The optional int holds the value to set to if InitKind is EQUATE or WORD
 VariableIdentifier = tuple[str, InitKind, int | None]
