@@ -215,5 +215,16 @@ If the stack ever becomes so large that it would exceed some maximum size, it co
 
 A common way that programs can encounter stack overflows is when executing a recursive function with an incorrect (or no) base case. If the recursive depth of the function call became very large, it would blow up the stack, and we would encounter a case of stack overflow. Another way that the stack could overflow is if a stack frame has very large local variables. For example, if a function call needed to use an array of one billion elements, that array would take up too much space in the call stack, and the program would crash.
 
+\section*{F$_5$: Arrays}
+\subsection*{Automation of Global Arrays}
+To implement arrays as global variables, we need to add support for visiting static array initializations (a list of 0 multiplied by an integer), and subscripting variables. In terms of generating, we need to statically allocate the arrays with \code{.BLOCK x} where $x$ is the size of the array times two (size of the integer type). Also, we need to generate the instructions to load value within the subscript into the index register, and add indexed addressing modes to the subsequent load of the array. \\
+
+Whenever an assignment is visited, we must determine if it is either an array initialization, array access, or a normal variable access. We can do this easily by checking if the identifier ends with an underscore (as indicated by the lab handout). These identifiers represent arrays, and we can treat them accordingly by allowing assignments which subscript the array, as well as emiting instructions for indexing and changing the addressing mode from 'd' to 'x'.
+
+\subsection*{Automation of Local Arrays}
+The process of implementing local arrays is very similar to that of global arrays, however some things must change. Firstly, the addressing mode will be 'sx' instead of just 'x'. Since local arrays are on the stack, we should access them relative to the stack pointer. Additionally, the allocation of these arrays occurs by subtracting $2x$ bytes to the stack pointer for each array within a stack frame (if $x$ is the size of the array). Other than this, the implementation is the same as the global array implementation, and we can rely on our existing code for this.
+
+\subsection*{Dynamic Arrays}
+Without using a non-bounded array, we would have to implement our own tpe of "non-bounded" array. To do this, we start with an array of size n. Then, if the array is full, and we try to add another item k to it, we would create a new array of size 2n, copy each element of the first array into the new array, then insert k into the new array as well. To implement this, we use a structure that has an attribute capacity denoting the amount of space allocated in the list, size to denote the number of elements currently in the list, and a pointer that points to the elements of the array, stored elsewhere (usually the heap). We do this because it is impossible to resize an array where the elements are allocated on the stack. This way, there isn't a real limit to the size of the array (aside from the limitations of the Pep/9 virtual machine), since space will be allocated accordingly when we have a lot of items. In contrast, when using a fixed array, size cannot change and the memory allocated does not either.
 
 \end{document}
