@@ -1,9 +1,9 @@
-from .Utils import GeneratorWrapper
+from typing import Iterator
 
 
 class SymbolTable:
 
-    def __init__(self, generator: GeneratorWrapper):
+    def __init__(self, generator: Iterator[str]):
         self.__generator = generator
         self.__names: dict[str, str] = {}
 
@@ -29,3 +29,6 @@ class SymbolTable:
 
     def __repr__(self) -> str:
         return self.__names.__repr__()
+
+    def __iter__(self):
+        return iter(self.__names.keys())

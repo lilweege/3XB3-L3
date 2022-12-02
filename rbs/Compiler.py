@@ -12,10 +12,10 @@ def compile(root_node, input_file, output_file=stdout):
     extractor.visit(root_node)
     identifier_labels = extractor.symbol_table
 
-    top_level = TopLevelProgram(output_file, identifier_labels, 'main')
+    top_level = TopLevelProgram(identifier_labels, 'main')
     top_level.visit(root_node)
 
-    functions = FunctionDefinition(output_file, identifier_labels, top_level.function_labels)
+    functions = FunctionDefinition(identifier_labels, top_level.function_labels)
     functions.visit(root_node)
 
     static_mem = StaticMemoryAllocation(output_file, identifier_labels, extractor.results)
@@ -27,7 +27,7 @@ def compile(root_node, input_file, output_file=stdout):
     static_mem.generate()
     local_mem.generate()
 
-    ep = EntryPoint(output_file, top_level.instructions)
-    fs = EntryPoint(output_file, functions.instructions)
+    ep = EntryPoint(output_file, top_level.finalize())
+    fs = EntryPoint(output_file, functions.finalize())
     fs.generate()
     ep.generate()

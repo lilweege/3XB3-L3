@@ -9,7 +9,7 @@ class ConstantPropagator:
         self.__reassigned_idents: set[str] = set()
         self.__seen_idents: set[str] = set()
 
-    def __try_propagate_constant(self, node: ast.AST) -> tuple[bool, bool, int]:
+    def try_propagate_constant(self, node: ast.AST) -> tuple[bool, bool, int]:
         '''
         Returns:
             bool: Is it possible to propagate the expression
@@ -18,10 +18,10 @@ class ConstantPropagator:
         '''
         if isinstance(node, ast.BinOp):
             if not isinstance(node.op, (ast.Add, ast.Sub)):
-                compile_error(node, f'Unsupported binary operator: {type(node.op).__name__}')
+                return False, False, 0
 
-            ok1, reassigned1, lhs = self.__try_propagate_constant(node.left)
-            ok2, reassigned2, rhs = self.__try_propagate_constant(node.right)
+            ok1, reassigned1, lhs = self.try_propagate_constant(node.left)
+            ok2, reassigned2, rhs = self.try_propagate_constant(node.right)
             ok = ok1 and ok2
             reassigned = reassigned1 or reassigned2
             if not ok:
@@ -51,7 +51,7 @@ class ConstantPropagator:
             compile_error(node, f"Unsupported type {type(node).__name__} in expression")
 
     def add_assign(self, identifier: str, node: ast.expr):
-        is_constexpr, used_reassigned, const_val = self.__try_propagate_constant(node)
+        is_constexpr, used_reassigned, const_val = self.try_propagate_constant(node)
 
         if is_constexpr:
             self.__propagated_constants[identifier] = const_val
