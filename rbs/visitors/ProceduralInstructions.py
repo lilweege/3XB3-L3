@@ -215,8 +215,6 @@ class ProceduralInstructions(ABC, ast.NodeVisitor):
         self._variable_names.add(ident)
 
         if self._should_save:
-            if subscript is not None:
-                self._access_memory(subscript, 'LDWX')
             self._access_memory(target, 'STWA')
         else:
             self._should_save = True
