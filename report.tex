@@ -227,4 +227,27 @@ The process of implementing local arrays is very similar to that of global array
 \subsection*{Dynamic Arrays}
 Without using a non-bounded array, we would have to implement our own tpe of "non-bounded" array. To do this, we start with an array of size n. Then, if the array is full, and we try to add another item k to it, we would create a new array of size 2n, copy each element of the first array into the new array, then insert k into the new array as well. To implement this, we use a structure that has an attribute capacity denoting the amount of space allocated in the list, size to denote the number of elements currently in the list, and a pointer that points to the elements of the array, stored elsewhere (usually the heap). We do this because it is impossible to resize an array where the elements are allocated on the stack. This way, there isn't a real limit to the size of the array (aside from the limitations of the Pep/9 virtual machine), since space will be allocated accordingly when we have a lot of items. In contrast, when using a fixed array, size cannot change and the memory allocated does not either.
 
+\pagebreak
+
+\section*{Self-Reflection (Luigi Quattrociocchi)}
+\subsection*{Backward: How much did you know about the subject before we started?}
+I knew about every part of this assignment before starting. Compilers and programming languages are very interetsing topics to me. I have already written my own programming language and compiler, so parsing, visiting, and generating are very familiar topics for me. A consequence of this was that the written answer questions were all things that I already knew the answer to. Despite all my previous knowledge, this lab was a good refresher for me in these topics.
+
+\subsection*{Inward: What did/do you find frustrating about this assignment?}
+The most frustrating (or annoying) part of this assignment for me was the lack of static typing in python. In any non-trivial project, typing-related bugs are bound to occur. This is especially prevalent when using the \code{ast} module in python because of all the possible subclasses that can occur and must be handled. I would have preferred if this lab was to be written in a statically typed language (C++ and Java come to mind).
+
+\subsection*{Outward: If you were the instructor, what comments would you make about this piece?}
+I would note that understanding how programming languages and compilers work at a fundamental level is one of the most useful pieces of knowledge that we as software engineers should have. Thoroughly understanding compilers gives key insights into design patterns, recursion, and computer architecture. As an instructor, I would make this known, since in my opinion these are all key topics which will prove useful in many different kinds of future jobs.
+
+\subsection*{Forward: What would you change if you had a chance to do this assignment over again?}
+There are many things that I think I executed well, particularly the file heirarchy and organization, use of type hints for static analysis, and object-oriented design. Despite this, given the chance to redo the assignment I would have looked ahead to the later tasks to gain foresight into what functionality the final code should have. Doing this would definitely have saved much of the time I spent refactoring code that needed to change when implementing functions in F4. Of course, hindsight is 20/20.
+
+\pagebreak
+
+\section*{Self-Reflection (Dennis Fong)}
+\subsection*{Backward: How much did you know about the subject before we started?}
+\subsection*{Inward: What did/do you find frustrating about this assignment?}
+\subsection*{Outward: If you were the instructor, what comments would you make about this piece?}
+\subsection*{Forward: What would you change if you had a chance to do this assignment over again?}
+
 \end{document}
