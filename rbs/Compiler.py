@@ -5,6 +5,8 @@ from .visitors.FunctionDefinition import FunctionDefinition
 from .generators.StaticMemoryAllocation import StaticMemoryAllocation
 from .generators.LocalMemoryAllocation import LocalMemoryAllocation
 from .generators.EntryPoint import EntryPoint
+from .optimizers.Optimizer import Optimizer
+from .optimizers.passes.Peephole import peephole_double_load, peephole_nops
 
 
 def compile(root_node, input_file, output_file=stdout):
@@ -27,7 +29,11 @@ def compile(root_node, input_file, output_file=stdout):
     static_mem.generate()
     local_mem.generate()
 
-    ep = EntryPoint(output_file, top_level.finalize())
-    fs = EntryPoint(output_file, functions.finalize())
+    passes = Optimizer()
+    passes.add_pass(peephole_double_load)
+    passes.add_pass(peephole_nops)
+
+    ep = EntryPoint(output_file, passes.optimize(top_level.finalize()))
+    fs = EntryPoint(output_file, passes.optimize(functions.finalize()))
     fs.generate()
     ep.generate()
